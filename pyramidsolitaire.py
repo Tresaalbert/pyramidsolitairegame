@@ -1,8 +1,104 @@
-import tkinter as tk
-from tkinter import messagebox
+import streamlit as st
 import random
 
-# ── Exactly 13 unique cards: A 2 3 4 5 6 7 8 9 10 J Q K ──────────────────────
+st.set_page_config(
+    page_title="Pyramid Solitaire",
+    page_icon="♦",
+    layout="centered",
+)
+
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Georgia&display=swap');
+
+html, body, [data-testid="stAppViewContainer"] {
+    background: #0a3d1f;
+    color: #e8d5a3;
+}
+#MainMenu, footer, header { visibility: hidden; }
+[data-testid="stDecoration"] { display: none; }
+
+.block-container { padding: 1.5rem 2rem !important; }
+
+.title {
+    text-align: center;
+    font-size: 1.8rem;
+    font-weight: bold;
+    color: #e8d5a3;
+    letter-spacing: 0.1em;
+    margin-bottom: 0.2rem;
+}
+.subtitle {
+    text-align: center;
+    font-size: 0.8rem;
+    color: #4a8a60;
+    margin-bottom: 1rem;
+}
+.msg-box {
+    text-align: center;
+    font-size: 1rem;
+    font-style: italic;
+    color: #aed6b8;
+    background: #0f2d16;
+    border: 1px solid #1e5c30;
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    margin-bottom: 1rem;
+}
+.msg-ok  { color: #7ed17e !important; border-color: #2d7a3a !important; }
+.msg-err { color: #e07070 !important; border-color: #7a2d2d !important; }
+
+.stats {
+    text-align: center;
+    color: #7fa8c0;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+}
+
+.card-btn {
+    display: inline-block;
+    width: 72px;
+    height: 95px;
+    border-radius: 8px;
+    border: 2px solid #aaa;
+    background: #fffdf5;
+    text-align: center;
+    line-height: 1.1;
+    cursor: pointer;
+    font-weight: bold;
+    padding-top: 6px;
+    font-size: 1rem;
+    margin: 4px;
+    vertical-align: top;
+    transition: transform 0.1s;
+}
+.card-btn.selected {
+    border-color: #f9a825;
+    background: #fff176;
+}
+.card-btn.red { color: #c0392b; }
+.card-btn.black { color: #1a1a2e; }
+
+.pyramid-row {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 4px;
+}
+
+.stButton > button {
+    background: #1e4a6e !important;
+    color: #e8d5a3 !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-weight: bold !important;
+    padding: 0.5rem 1.5rem !important;
+}
+.stButton > button:hover {
+    background: #2a6a9e !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 CARDS = [
     {"rank": "A",  "suit": "♠", "value": 1},
     {"rank": "2",  "suit": "♥", "value": 2},
@@ -18,218 +114,141 @@ CARDS = [
     {"rank": "Q",  "suit": "♣", "value": 12},
     {"rank": "K",  "suit": "♠", "value": 13},
 ]
-RED_SUITS = {"♥", "♦"}
-ROW_SIZES = [1, 2, 3, 4, 3]   # total = 13
+RED_SUITS  = {"♥", "♦"}
+ROW_SIZES  = [1, 2, 3, 4, 3]
 
-CARD_W = 82
-CARD_H = 100
-H_GAP  = 14
-V_GAP  = 18
-BG     = "#0a3d1f"
-FELT   = "#145228"
+def new_game():
+    deck = [dict(c, removed=False) for c in CARDS]
+    random.shuffle(deck)
+    pyramid = []
+    idx = 0
+    for size in ROW_SIZES:
+        pyramid.append([deck[idx + i] for i in range(size)])
+        idx += size
+    return pyramid
 
+def active_cards(pyramid):
+    return [
+        (ri, ci)
+        for ri, row in enumerate(pyramid)
+        for ci, c in enumerate(row)
+        if not c["removed"]
+    ]
 
-class PyramidGame:
-    def __init__(self):
-        self.new_game()
+# ── Session state init ────────────────────────────────────────────────────────
+if "pyramid" not in st.session_state:
+    st.session_state.pyramid  = new_game()
+    st.session_state.selected = []
+    st.session_state.moves    = 0
+    st.session_state.msg      = ("Pick two cards that sum to 13  •  K removes alone", "info")
+    st.session_state.won      = False
 
-    def new_game(self):
-        deck = [dict(c, removed=False) for c in CARDS]
-        random.shuffle(deck)
-        self.pyramid = []
-        idx = 0
-        for size in ROW_SIZES:
-            row = [deck[idx + i] for i in range(size)]
-            idx += size
-            self.pyramid.append(row)
-        self.selected = []
-        self.moves    = 0
-        self.won      = False
+# ── Title ─────────────────────────────────────────────────────────────────────
+st.markdown('<div class="title">♦ PYRAMID SOLITAIRE ♦</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">13 unique cards • Pick pairs that sum to 13 • K removes alone</div>', unsafe_allow_html=True)
 
-    def active(self):
-        return [(ri, ci, c)
-                for ri, row in enumerate(self.pyramid)
-                for ci, c in enumerate(row)
-                if not c["removed"]]
+remaining = len(active_cards(st.session_state.pyramid))
+st.markdown(f'<div class="stats">Moves: {st.session_state.moves} &nbsp;&nbsp;|&nbsp;&nbsp; Cards left: {remaining}</div>', unsafe_allow_html=True)
 
+msg_text, msg_kind = st.session_state.msg
+msg_class = {"ok": "msg-ok", "err": "msg-err", "info": ""}.get(msg_kind, "")
+st.markdown(f'<div class="msg-box {msg_class}">{msg_text}</div>', unsafe_allow_html=True)
 
-class App(tk.Tk):
-    def __init__(self):
-        super().__init__()
-        self.title("Pyramid Solitaire")
-        self.resizable(False, False)
-        self.configure(bg=BG)
-        self.game = PyramidGame()
-        self._build_ui()
-        self._draw()
+# ── Win check ─────────────────────────────────────────────────────────────────
+if st.session_state.won:
+    st.success(f"🎉 Congratulations! You cleared all 13 cards in {st.session_state.moves} moves!")
 
-    # ── UI skeleton ───────────────────────────────────────────────────────────
-    def _build_ui(self):
-        tk.Label(self, text="♦  PYRAMID SOLITAIRE  ♦",
-                 font=("Georgia", 17, "bold"), fg="#e8d5a3", bg=BG).pack(pady=(14, 3))
+# ── Pyramid rendering ─────────────────────────────────────────────────────────
+pyramid = st.session_state.pyramid
+selected = st.session_state.selected
 
-        self.stats_var = tk.StringVar()
-        tk.Label(self, textvariable=self.stats_var,
-                 font=("Georgia", 11), fg="#7fa8c0", bg=BG).pack()
+for ri, row in enumerate(pyramid):
+    live = [(ci, c) for ci, c in enumerate(row) if not c["removed"]]
+    if not live:
+        continue
 
-        self.msg_var = tk.StringVar()
-        self.msg_lbl = tk.Label(self, textvariable=self.msg_var,
-                                font=("Georgia", 11, "italic"),
-                                fg="#aed6b8", bg=BG, wraplength=540)
-        self.msg_lbl.pack(pady=(4, 8))
+    cols = st.columns([1] * len(live), gap="small")
+    # Centre the row using empty columns
+    total_slots = max(len(r) for r in pyramid if any(not c["removed"] for c in r))
+    padding = (total_slots - len(live)) // 2
 
-        cw = 4 * CARD_W + 3 * H_GAP + 60
-        ch = 5 * CARD_H + 4 * V_GAP + 30
-        self.canvas = tk.Canvas(self, width=cw, height=ch,
-                                bg=FELT, highlightthickness=0)
-        self.canvas.pack(padx=20, pady=(0, 8))
-        self.canvas.bind("<Button-1>", self._on_click)
+    padded_cols = st.columns([1] * (len(live) + padding * 2), gap="small")
 
-        bf = tk.Frame(self, bg=BG)
-        bf.pack(pady=(0, 12))
-        tk.Button(bf, text="🔀  New Game",
-                  font=("Georgia", 11), fg="#e8d5a3", bg="#1e4a6e",
-                  activebackground="#2a6a9e", relief="flat",
-                  padx=18, pady=6, command=self._new_game).pack()
+    for slot, (ci, card) in enumerate(live):
+        col = padded_cols[padding + slot]
+        with col:
+            is_selected = (ri, ci) in selected
+            suit_color  = "red" if card["suit"] in RED_SUITS else "black"
+            border_color = "#f9a825" if is_selected else "#aaaaaa"
+            bg_color     = "#fff176" if is_selected else "#fffdf5"
+            text_color   = "#c0392b" if suit_color == "red" else "#1a1a2e"
 
-        tk.Label(self,
-                 text="13 unique cards: A 2 3 4 5 6 7 8 9 10 J Q K\n"
-                      "Pick two cards that sum to 13  •  K removes alone",
-                 font=("Georgia", 9), fg="#4a8a60", bg=BG).pack(pady=(0, 10))
+            card_html = f"""
+            <div style="
+                width:72px; height:95px; border-radius:8px;
+                border:2px solid {border_color};
+                background:{bg_color};
+                color:{text_color};
+                display:flex; flex-direction:column;
+                align-items:center; justify-content:center;
+                font-weight:bold; font-size:1.1rem;
+                margin:auto;
+            ">
+                <div style="font-size:1.3rem;">{card['rank']}</div>
+                <div style="font-size:1.1rem;">{card['suit']}</div>
+            </div>
+            """
+            st.markdown(card_html, unsafe_allow_html=True)
 
-        self._rects = {}   # (ri,ci) → (x1,y1,x2,y2)
+            btn_label = f"{card['rank']}{card['suit']}"
+            if st.button(btn_label, key=f"card_{ri}_{ci}", disabled=st.session_state.won):
+                g = st.session_state
 
-    # ── Drawing ───────────────────────────────────────────────────────────────
-    def _positions(self):
-        """Centre each row's remaining cards on the canvas."""
-        positions = {}
-        cw = int(self.canvas["width"])
-        for ri, row in enumerate(self.game.pyramid):
-            live = [(ci, c) for ci, c in enumerate(row) if not c["removed"]]
-            n = len(live)
-            if n == 0:
-                continue
-            row_w   = n * CARD_W + (n - 1) * H_GAP
-            start_x = (cw - row_w) // 2 + CARD_W // 2
-            cy      = 15 + CARD_H // 2 + ri * (CARD_H + V_GAP)
-            for slot, (ci, _) in enumerate(live):
-                cx = start_x + slot * (CARD_W + H_GAP)
-                positions[(ri, ci)] = (cx, cy)
-        return positions
+                if (ri, ci) in g.selected:
+                    g.selected.remove((ri, ci))
+                    g.msg = ("Pick two cards that sum to 13  •  K removes alone", "info")
 
-    def _draw(self):
-        g = self.game
-        self.canvas.delete("all")
-        self._rects.clear()
+                elif card["value"] == 13:
+                    pyramid[ri][ci]["removed"] = True
+                    g.moves += 1
+                    g.msg = (f"Removed K{card['suit']} alone ✓", "ok")
+                    g.selected = []
+                    if not active_cards(pyramid):
+                        g.won = True
 
-        for (ri, ci), (cx, cy) in self._positions().items():
-            card = g.pyramid[ri][ci]
-            x1, y1 = cx - CARD_W // 2, cy - CARD_H // 2
-            x2, y2 = cx + CARD_W // 2, cy + CARD_H // 2
+                else:
+                    g.selected.append((ri, ci))
+                    if len(g.selected) == 2:
+                        (r1, c1), (r2, c2) = g.selected
+                        v1 = pyramid[r1][c1]["value"]
+                        v2 = pyramid[r2][c2]["value"]
+                        n1 = pyramid[r1][c1]["rank"] + pyramid[r1][c1]["suit"]
+                        n2 = pyramid[r2][c2]["rank"] + pyramid[r2][c2]["suit"]
+                        if v1 + v2 == 13:
+                            pyramid[r1][c1]["removed"] = True
+                            pyramid[r2][c2]["removed"] = True
+                            g.moves += 1
+                            g.msg = (f"Removed {n1} + {n2} ✓", "ok")
+                            g.selected = []
+                            if not active_cards(pyramid):
+                                g.won = True
+                        else:
+                            g.msg = (f"{n1}({v1}) + {n2}({v2}) = {v1+v2}  ✗  Must equal 13!", "err")
+                            g.selected = []
+                    else:
+                        v = card["value"]
+                        g.msg = (f"{card['rank']}{card['suit']} selected — need a {13 - v} to pair.", "info")
 
-            sel  = (ri, ci) in g.selected
-            red  = card["suit"] in RED_SUITS
-            tc   = "#c0392b" if red else "#1a1a2e"
+                st.rerun()
 
-            # Shadow
-            self.canvas.create_rectangle(x1+3, y1+3, x2+3, y2+3,
-                                         fill="#082015", outline="")
-            # Card body
-            fill    = "#fff176" if sel else "#fffdf5"
-            outline = "#f9a825" if sel else "#aaaaaa"
-            self.canvas.create_rectangle(x1, y1, x2, y2,
-                                         fill=fill, outline=outline,
-                                         width=3 if sel else 1)
-
-            r, s = card["rank"], card["suit"]
-            # Top-left corner
-            self.canvas.create_text(x1+8, y1+10, text=r,
-                                    font=("Georgia", 10, "bold"), fill=tc, anchor="nw")
-            self.canvas.create_text(x1+8, y1+24, text=s,
-                                    font=("Georgia", 9), fill=tc, anchor="nw")
-            # Centre
-            self.canvas.create_text(cx, cy - 10, text=r,
-                                    font=("Georgia", 22, "bold"), fill=tc)
-            self.canvas.create_text(cx, cy + 16, text=s,
-                                    font=("Georgia", 18), fill=tc)
-
-            self._rects[(ri, ci)] = (x1, y1, x2, y2)
-
-        remaining = len(g.active())
-        self.stats_var.set(f"Moves: {g.moves}        Cards left: {remaining}")
-
-        if not self.msg_var.get():
-            self._set_msg("Pick two cards that sum to 13  •  K removes alone")
-
-    def _set_msg(self, text, kind="info"):
-        self.msg_var.set(text)
-        self.msg_lbl.configure(fg={"ok":"#7ed17e","err":"#e07070","info":"#aed6b8"}.get(kind,"#aed6b8"))
-
-    # ── Interaction ───────────────────────────────────────────────────────────
-    def _on_click(self, event):
-        if self.game.won:
-            return
-        for (ri, ci), (x1, y1, x2, y2) in self._rects.items():
-            if x1 <= event.x <= x2 and y1 <= event.y <= y2:
-                self._handle(ri, ci)
-                return
-
-    def _handle(self, ri, ci):
-        g, ref = self.game, (ri, ci)
-        card   = g.pyramid[ri][ci]
-
-        # Deselect
-        if ref in g.selected:
-            g.selected.remove(ref)
-            self._set_msg("Pick two cards that sum to 13  •  K removes alone")
-            self._draw()
-            return
-
-        # King → instant remove
-        if card["value"] == 13:
-            self._remove([ref])
-            return
-
-        g.selected.append(ref)
-
-        if len(g.selected) == 2:
-            (r1,c1),(r2,c2) = g.selected
-            v1 = g.pyramid[r1][c1]["value"];  v2 = g.pyramid[r2][c2]["value"]
-            n1 = g.pyramid[r1][c1]["rank"] + g.pyramid[r1][c1]["suit"]
-            n2 = g.pyramid[r2][c2]["rank"] + g.pyramid[r2][c2]["suit"]
-            if v1 + v2 == 13:
-                self._remove(list(g.selected))
-            else:
-                self._set_msg(f"{n1}({v1}) + {n2}({v2}) = {v1+v2}  ✗  Must equal 13!", "err")
-                g.selected = []
-                self._draw()
-        else:
-            v = card["value"]
-            self._set_msg(f"{card['rank']}{card['suit']} selected — need a {13-v} to pair.", "info")
-            self._draw()
-
-    def _remove(self, refs):
-        g = self.game
-        names = []
-        for r, c in refs:
-            g.pyramid[r][c]["removed"] = True
-            names.append(g.pyramid[r][c]["rank"] + g.pyramid[r][c]["suit"])
-        g.selected = []
-        g.moves   += 1
-        self._set_msg(f"Removed  {' + '.join(names)}  ✓", "ok")
-        self._draw()
-        if not g.active():
-            g.won = True
-            self.after(400, lambda: messagebox.showinfo(
-                "You Win! 🎉",
-                f"Congratulations!\nCleared all 13 cards in {g.moves} moves! 🎉"))
-
-    def _new_game(self):
-        self.game = PyramidGame()
-        self.msg_var.set("")
-        self._set_msg("Pick two cards that sum to 13  •  K removes alone")
-        self._draw()
-
-
-if __name__ == "__main__":
-    App().mainloop()
+# ── New Game button ───────────────────────────────────────────────────────────
+st.markdown("<br>", unsafe_allow_html=True)
+col1, col2, col3 = st.columns([1, 1, 1])
+with col2:
+    if st.button("🔀 New Game", use_container_width=True):
+        st.session_state.pyramid  = new_game()
+        st.session_state.selected = []
+        st.session_state.moves    = 0
+        st.session_state.msg      = ("Pick two cards that sum to 13  •  K removes alone", "info")
+        st.session_state.won      = False
+        st.rerun()
